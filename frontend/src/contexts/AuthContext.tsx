@@ -22,14 +22,15 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0)
   const router = useRouter()
   const pathname = usePathname()
 
   // Cálculo simples e direto: se user não for null, está autenticado
   const isAuthenticated = !!user
 
-  // Função para buscar dados do usuário atual
-  const fetchUserProfile = useCallback(async (): Promise<User | null> => {
+  // Função para buscar dados do usuário atual com cache
+  const fetchUserProfile = useCallback(async (forceRefresh = false): Promise<User | null> => {
     try {
       const token = authService.getToken()
       if (!token) {
@@ -37,9 +38,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return null
       }
 
+      // Cache de 30 segundos para evitar chamadas desnecessárias
+      const now = Date.now()
+      const cacheTime = 30000 // 30 segundos
+      
+      if (!forceRefresh && user && (now - lastFetchTime) < cacheTime) {
+        console.log('📦 Usando dados em cache')
+        return user
+      }
+
       console.log('🔍 Buscando dados do usuário...')
       const userData = await authService.getCurrentUser()
       console.log('✅ Dados do usuário obtidos:', userData)
+      
+      setLastFetchTime(now)
       
       // IMPORTANTE: Retornar os dados do usuário mesmo que campos estejam vazios
       // O importante é que o objeto user existe, não o conteúdo dos campos
@@ -50,7 +62,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       authService.logout()
       return null
     }
-  }, [])
+  }, [user, lastFetchTime])
 
   // Função de login que salva o token e busca os dados do usuário
   const login = useCallback(async (token: string): Promise<void> => {
@@ -69,11 +81,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(userData)
         console.log('✅ Login realizado com sucesso')
         
-        // Aguardar um pouco antes de redirecionar para evitar problemas
-        setTimeout(() => {
-          console.log('🔄 Redirecionando para dashboard...')
-          router.push('/dashboard')
-        }, 100)
+        // Redirecionar imediatamente sem delay
+        console.log('🔄 Redirecionando para dashboard...')
+        router.push('/dashboard')
       } else {
         throw new Error('Falha ao carregar dados do usuário')
       }
@@ -94,17 +104,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUser(null)
     authService.logout()
     
-    // Aguardar um pouco antes de redirecionar
-    setTimeout(() => {
-      console.log('🔄 Redirecionando para login...')
-      router.push('/login')
-    }, 100)
+    // Redirecionar imediatamente sem delay
+    console.log('🔄 Redirecionando para login...')
+    router.push('/login')
   }, [router])
 
   // Função para atualizar dados do usuário
   const refreshUser = useCallback(async (): Promise<void> => {
     try {
-      const userData = await fetchUserProfile()
+      const userData = await fetchUserProfile(true) // Force refresh
       setUser(userData)
     } catch (error) {
       console.error('❌ Erro ao atualizar dados do usuário:', error)

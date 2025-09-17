@@ -31,6 +31,7 @@ if (typeof window !== 'undefined') {
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 10000, // 10 segundos de timeout
   headers: {
     'Content-Type': 'application/json',
   },

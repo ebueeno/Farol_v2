@@ -49,10 +49,22 @@ export default function LoginPage() {
       console.log('🎉 Redirecionamento iniciado')
     } catch (err: any) {
       console.error('❌ Erro no login:', err)
-      setError(
-        err.response?.data?.detail || 
-        'Erro ao fazer login. Verifique suas credenciais.'
-      )
+      
+      // Tratar diferentes tipos de erro
+      if (err.code === 'ECONNABORTED') {
+        setError('Tempo limite excedido. Tente novamente.')
+      } else if (err.response?.status === 401) {
+        setError('Email ou senha incorretos.')
+      } else if (err.response?.status === 400) {
+        setError('Usuário inativo. Entre em contato com o suporte.')
+      } else if (err.response?.status >= 500) {
+        setError('Erro no servidor. Tente novamente em alguns minutos.')
+      } else {
+        setError(
+          err.response?.data?.detail || 
+          'Erro ao fazer login. Verifique suas credenciais.'
+        )
+      }
     } finally {
       setIsLoading(false)
     }
