@@ -1,5 +1,4 @@
 export { Button, buttonVariants } from './Button'
-export { RainbowButton } from './rainbow-button'
 export { Input } from './Input'
 export { Textarea } from './Textarea'
 export { Select } from './Select'
