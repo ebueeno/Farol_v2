@@ -80,8 +80,13 @@ body {
 }
 
 /* Override for form elements to ensure they have proper text color */
-input, select, textarea, button {
+input, select, textarea {
   color: hsl(var(--foreground)) !important; /* Usa a cor foreground do tema */
+}
+
+/* Botões - sem !important para permitir estados de hover */
+button {
+  color: hsl(var(--foreground)); /* Usa a cor foreground do tema */
 }
 
 /* Ensure labels have proper color */
