@@ -13,7 +13,7 @@ function SimulationActiveContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  
+
   const [session, setSession] = useState<InterviewSession | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [currentMessage, setCurrentMessage] = useState('')
@@ -23,8 +23,87 @@ function SimulationActiveContent() {
   const [feedback, setFeedback] = useState<InterviewFeedback | null>(null)
   const [error, setError] = useState('')
 
+  // Estados para funcionalidades de voz
+  const [isListening, setIsListening] = useState(false)
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const recognitionRef = useRef<any>(null)
+
   // Configuração da simulação (vem da URL ou localStorage)
   const [config, setConfig] = useState<InterviewConfig | null>(null)
+
+  // Inicialização do reconhecimento de voz
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = false
+        recognition.interimResults = false
+        recognition.lang = 'pt-BR'
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript
+          setCurrentMessage(prev => (prev + ' ' + transcript).trim())
+        }
+
+        recognition.onerror = (event: any) => {
+          setVoiceError(`Erro no reconhecimento de voz: ${event.error}`)
+          setIsListening(false)
+        }
+
+        recognition.onend = () => {
+          setIsListening(false)
+        }
+
+        recognitionRef.current = recognition
+      }
+    }
+  }, [])
+
+  // Função para falar texto (text-to-speech)
+  const speakText = (text: string) => {
+    if (!isAudioEnabled || !text.trim()) return
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'pt-BR'
+    utterance.rate = 0.9
+    utterance.pitch = 1
+    utterance.volume = 0.8
+
+    utterance.onstart = () => setIsSpeaking(true)
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+
+    window.speechSynthesis.speak(utterance)
+  }
+
+  // Função para alternar gravação de voz
+  const toggleVoiceRecording = () => {
+    if (!recognitionRef.current) {
+      setVoiceError('Reconhecimento de voz não suportado neste navegador')
+      return
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop()
+    } else {
+      setVoiceError('')
+      recognitionRef.current.start()
+      setIsListening(true)
+    }
+  }
+
+  // Ler automaticamente mensagens do entrevistador
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1]
+    if (lastMessage && lastMessage.role === 'interviewer' && isAudioEnabled) {
+      setTimeout(() => speakText(lastMessage.content), 500)
+    }
+  }, [messages, isAudioEnabled])
 
   useEffect(() => {
     // Tentar obter configuração da URL ou localStorage
@@ -89,6 +168,12 @@ function SimulationActiveContent() {
   const sendMessage = async () => {
     if (!currentMessage.trim() || !session || isLoading) return
 
+    // Parar qualquer atividade de voz
+    window.speechSynthesis.cancel()
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop()
+    }
+
     const userMessage: ChatMessage = {
       role: 'candidate',
       content: currentMessage.trim(),
@@ -126,6 +211,12 @@ function SimulationActiveContent() {
 
   const endInterview = async () => {
     if (!session || !config) return
+
+    // Parar atividades de voz
+    window.speechSynthesis.cancel()
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop()
+    }
 
     setIsLoading(true)
     setError('')
@@ -270,6 +361,82 @@ function SimulationActiveContent() {
             </p>
           </div>
 
+          {/* Controles de Voz - NOVO */}
+          {isInterviewStarted && (
+            <Card className="mb-6">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsAudioEnabled(!isAudioEnabled)}
+                      className={`${isAudioEnabled ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}
+                    >
+                      {isAudioEnabled ? (
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M6.343 6.343A8.96 8.96 0 003 12a8.96 8.96 0 003.343 5.657M9 9l6 6m0-6l-6 6" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      <span>{isAudioEnabled ? 'Áudio Ativo' : 'Áudio Desativado'}</span>
+                    </Button>
+
+                    {isSpeaking && (
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.speechSynthesis.cancel()}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 4h4v16H6V4zM14 4h4v16h-4V4z" />
+                          </svg>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {recognitionRef.current && (
+                      <div className="flex items-center space-x-2">
+                        <span className={`text-sm ${isListening ? 'text-red-600' : 'text-gray-600'}`}>
+                          {isListening ? 'Ouvindo...' : 'Entrada por Voz'}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={toggleVoiceRecording}
+                          disabled={isLoading}
+                          className={`${isListening ? 'bg-red-50 border-red-200 text-red-700' : ''}`}
+                        >
+                          {isListening ? (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {voiceError && (
+                  <div className="mt-2 text-sm text-red-600">
+                    {voiceError}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
               <div className="flex">
@@ -373,10 +540,23 @@ function SimulationActiveContent() {
                           }`}
                         >
                           <div className="text-sm">{message.content}</div>
-                          <div className={`text-xs mt-1 ${
+                          <div className={`text-xs mt-1 flex items-center justify-between ${
                             message.role === 'candidate' ? 'text-blue-100' : 'text-gray-500'
                           }`}>
-                            {formatTime(message.timestamp)}
+                            <span>{formatTime(message.timestamp)}</span>
+                            {/* Botão para repetir fala - NOVO */}
+                            {message.role === 'interviewer' && (
+                              <button
+                                onClick={() => speakText(message.content)}
+                                className="ml-2 hover:opacity-70"
+                                disabled={isSpeaking}
+                                title="Repetir mensagem"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728" />
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -399,14 +579,45 @@ function SimulationActiveContent() {
 
                   {/* Message Input */}
                   <div className="space-y-4">
-                    <Textarea
-                      value={currentMessage}
-                      onChange={(e) => setCurrentMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Digite sua resposta aqui..."
-                      className="min-h-[100px] resize-none"
-                      disabled={isLoading}
-                    />
+                    <div className="relative">
+                      <Textarea
+                        value={currentMessage}
+                        onChange={(e) => setCurrentMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder={isListening 
+                          ? "Ouvindo... fale agora ou digite sua resposta..." 
+                          : "Digite ou fale sua resposta aqui..."
+                        }
+                        className={`min-h-[100px] resize-none pr-12 ${
+                          isListening ? 'border-red-300 bg-red-50' : ''
+                        }`}
+                        disabled={isLoading}
+                      />
+                      {/* Botão de microfone no campo - NOVO */}
+                      {recognitionRef.current && (
+                        <button
+                          onClick={toggleVoiceRecording}
+                          disabled={isLoading}
+                          className={`absolute right-3 top-3 p-2 rounded-md transition-colors ${
+                            isListening 
+                              ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                          title={isListening ? "Parar gravação" : "Começar gravação"}
+                        >
+                          {isListening ? (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
+                    </div>
                     
                     <div className="flex justify-between">
                       <Button
@@ -482,4 +693,3 @@ export default function SimulationActivePage() {
     </Suspense>
   )
 }
-
